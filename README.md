@@ -1,17 +1,20 @@
-# Projeto de Engenharia de Dados: Disponibilização de Tabelas em Tempo Real em Ambiente Datalake através de Streaming de Dados com CDC e Apache Kafka 
+# Projeto de Engenharia de Dados: Pipeline Batch com uso do Spark através do DataProc do GCP
 
 ## Introdução
 
-Em determinados contextos de engenharia de dados, surge a necessidade de disponibilizar dados de uma tabela transacional em tempo real. Para isso, é crucial utilizar streaming de dados, que envolve a coleta, ingestão e processamento de dados em tempo real. Este projeto tem como objetivo desenvolver uma pipeline capaz de coletar dados em tempo real de um banco transacional Postgres, utilizando para isso um conector CDC chamado Debezium, juntamente com o Apache Kafka, uma tecnologia popular de streaming. Os dados serão então disponibilizados em um datalake, usando o Minio como armazenamento de objeto e o DuckDB como engine de processamento. Todo o projeto será desenvolvido em ambiente local com o uso do Docker. 
+O Google Cloud Dataproc é um serviço gerenciado na nuvem da Google que possibilita a rápida e eficiente execução de scripts Spark. Este projeto tem como objetivo o desenvolvimento completo de uma pipeline, que tem origem em dados armazenados no Google Drive, os quais são processados pelo Dataproc. Além disso, o projeto envolve a configuração do Airflow para a orquestração dessa pipeline, juntamente com o uso do GitHub Actions para a criação de esteiras de CI/CD. 
 
 ## Tecnologias Utilizadas
 
-- **Postgres:** Banco de dados relacional que irá consistir como origem dos dados.
-- **Docker:** tecnologia que permite executar todas as tecnologias do projeto através de contêineres.  
-- **Kafka:** plataforma de streaming de dados distribuída, usada para processamento de eventos em tempo real e armazenamento de fluxos de dados em larga escala. 
-- **Debezium:** conector de captura de dados de alteração (CDC) open-source, utilizado para capturar mudanças em bancos de dados e transformá-las em um fluxo de eventos em tempo real. 
-- **Python:** Linguagem de programação utilizada para realizar toda a etapa de processamento.
-- **DuckDb:** biblioteca multiuso que dentre suas funções é capaz ser utilizada como engine de processamento, sendo capaz de realizar consultas diretamente no Minio.
+- **Compute Engine:** máquina virtual na qual será executado o Airflow.
+- **GitHub Action:** plataforma de automação integrada que copiará os dados do repositório github para o diretório da Compute Engine.   
+- **Terraform:** ferramenta que permite o provisionamento eficiente de toda a infraestrutura necessária, seguindo a metodologia de Infraestrutura como Código (IaC). 
+- **Cloud Function** ambiente na nuvem que executará a parte de ingestão do código Python, fornecendo escalabilidade e flexibilidade. 
+- **Airflow:** ferramenta open-source de orquestração de pipelines.
+- **Pyspark:** framework de Big Data utilizado para realizar a etapa de processamento dos dados.
+- **Google Drive:** serviço de armazenamento em nuvem oferecido pelo Google para armazenar, compartilhar e sincronizar arquivos e documentos online.
+- **DataProc:** serviço de gerenciamento de clusters de computação para processamento de dados em grande escala, ambiente no qual sera executado o código spark.
+- **Cloud Storage:** serviço da nuvem que será responsável pelo armazenamento dos dados.
   
 <p align="left">
 <img src="/img/postgres-logo.png" alt="postgres-logo" height="50" /> 
@@ -28,47 +31,34 @@ Em determinados contextos de engenharia de dados, surge a necessidade de disponi
 
 ## Etapas do Projeto
 
-### 1. Configuração Inicial do Banco de Dados Postgres
+### 1. Configurações Iniciais para o Uso da API do Google Drive
 
-Na primeira etapa do projeto, é imprescindível realizar o provisionamento de um banco de dados transacional, sendo o Postgres a escolha feita para desempenhar essa função como fonte de dados primária. Este banco será responsável pela replicação dos dados em tempo real. A coleta dos dados será realizada por meio do CDC (Capture Data Changes) ou captura de dados alterados, que consiste na leitura constante dos logs binários do banco. Isso permite rastrear em tempo real qualquer evento que ocorra nas tabelas, reduzindo o impacto nas transações do banco, uma vez que não é uma consulta direta ao banco, mas sim uma leitura de seus logs. 
+Como os dados têm origem em arquivos disponíveis exclusivamente no Google Drive, são necessárias configurações iniciais para o uso da API. Isso envolve a habilitação da API no projeto do GCP, além da criação de um usuário de teste na tela de permissão OAuth. O procedimento detalhado está descrito na documentação da Google, acessível através do link abaixo: [Link para a documentação]. Com a API configurada corretamente e utilizando a biblioteca Google para interação, foi criada uma classe capaz de manipular os arquivos do Google Drive, permitindo listar, baixar e fazer upload de arquivos. 
 
-Para que o banco gere este logs que serão consultados para ser feito o CDC, é necessário realizar uma configuração específica que ativa os requisitos necessários, para isso todas estas configurações são feitas através do arquivo [init.sql](config/init.sql), que são comandos que serão executados no container do postgres durante sua inicialização. 
+### 2. Desenvolvimento do Script da Cloud Function para a Etapa de Ingestão da Pipeline
 
-### 2. Configuração Inicial do Apache Kafka e Conector Debezium
+Com a API do Google Drive funcional, inicia-se o desenvolvimento da primeira parte da pipeline, que consiste na ingestão dos dados. Isso envolve a cópia dos dados do Google Drive para um bucket do Cloud Storage. Foi desenvolvido um script Python que consulta um arquivo contendo a última data de criação dos arquivos do Drive e, a cada execução, verifica e armazena os novos documentos criados. Este script, por sua simplicidade, não requer o uso de bibliotecas de big data, como Spark, e será executado como uma Cloud Function, seguindo boas práticas de infraestrutura como código, com o uso do Terraform. 
 
-Após o banco de dados ser configurado para gerar os logs necessários para ser feito o CDC, é hora de provisionar o serviço responsável por receber esses logs, que é o Apache Kafka. O Kafka é uma tecnologia open source com uma ampla gama de casos de uso. No contexto deste projeto, ele é utilizado como um sistema de mensageria assíncrono com padrão Pub/Sub (Publicação/Assinatura), o que ajuda em situações de eventual indisponibilidade dos serviços de processamento, que serão discutidos posteriormente. Além disso, o Kafka é capaz de encaminhar as mensagens para qualquer consumidor interessado.
+### 3. Desenvolvimento do Script de Processamento em Spark para Utilização no Dataproc
 
-Para que o Kafka possa receber os logs gerados pelo banco sempre que ocorrerem eventos nas tabelas configuradas, é necessário utilizar um conector específico capaz de lidar com o CDC. Para essa finalidade, será utilizado o Debezium, que realiza uma leitura constante do Postgres e envia mensagens para o Kafka sempre que ocorrer qualquer tipo de evento nas tabelas.
+Com a etapa de ingestão finalizada e os arquivos CSVs disponíveis no Cloud Storage, é o momento de realizar o processamento e tratamento desses dados através do Spark. Foi desenvolvido um script Spark capaz de transformar e tratar os arquivos CSVs conforme necessário. Com o script pronto, foram realizados testes na execução deste script como um job batch no Dataproc, uma solução gerenciada que dispensa a necessidade de provisionamento de infraestrutura e configuração de clusters. 
 
-### 3. Configuração Inicial do Minio como Armazenamento de Objetos
+### 4. Configuração da Instância e Instalação do Airflow para o Agendamento e Orquestração da Pipeline
 
-Os dados finais serão disponibilizados por meio da arquitetura de armazenamento DataLake. Para isso, será necessário um serviço de armazenamento de objetos chamado Minio. Este serviço irá possuir quatro buckets principais:
-1. RAW: Este bucket será utilizado como armazenamento primário das mensagens dos logs, salvando os dados em seu formato bruto, sem qualquer tipo de processamento adicional.
-2. Bronze: Esta camada consiste em ler os arquivos no formato bruto e salvar os mesmos dados no formato parquet. O formato parquet é um tipo de armazenamento colunar altamente otimizado, capaz de reduzir consideravelmente o espaço de armazenamento e aumentar a eficiência de consulta.
-3. Silver: Esta camada basicamente irá modificar os nomes das colunas e realizar alguma mudança de tipagem nos dados.
-4. Gold: Aqui será armazenada a tabela final que será utilizada para consumo. Esta tabela ficará no formato mais próximo do que o time de negócios ou os analistas de dados necessitam.
+Com os scripts prontos, será configurado um ambiente capaz de orquestrar a execução das etapas anteriores diariamente. Será criada uma máquina virtual que, através do Docker, executará um container contendo o Airflow. Através do Airflow, serão criados DAGs que executarão a Cloud Function e posteriormente o job no Dataproc. 
 
-### 4. Desenvolvimento do Script de Processamento para Leitura e Escrita dos Dados em Cada uma das Camadas do Data Lake
+### 5. Desenvolvimento do Script das DAGs
 
-Com todos os serviços provisionados disponíveis, agora é o momento de configurar o processamento dos logs provenientes do banco e criar as eventuais ETLs para cada uma das camadas. Cada container consiste a partir de uma imagem gerada de um [Dockerfile](Dockerfile) que é uma imagem python com os requisitos necessario instalados. Para isso, serão criados quatro containers principais:
-- **[Config_init:](src/config_init.py)** Este container realiza as configurações iniciais necessárias para o início da pipeline. Ele consiste em criar os quatro buckets necessários no Minio, criar também no Apache Kafka os tópicos para cada um dos buckets, que serão utilizados como gatilhos para os processamentos, e por fim, realizar a configuração do conector Debezium com as tabelas que devem ser lidas no banco, o que é feito através de uma requisição POST no container do Debezium.
-- **[Process_cdc_to_raw:](src/process_cdc_to_raw.py)** Este container, ao ser inicializado, realiza uma leitura contínua dos tópicos das tabelas do Kafka. Cada tabela que sofrerá CDC terá seu próprio tópico no Kafka. Assim que uma nova mensagem contendo um log informando algum evento da tabela é recebida no tópico, o container lê essa mensagem e escreve seu conteúdo como JSON na camada RAW no Minio. Além disso, envia uma mensagem para o tópico RAW informando a escrita de um novo objeto, contendo informações de datas, nome do tópico e tabela a qual o JSON se refere.
-- **[Process_raw_to_bronze:](src/process_raw_to_bronze.py)** Este container lê continuamente o tópico RAW e, assim que uma nova mensagem é recebida, informando o caminho de um novo arquivo JSON na RAW, realiza um SELECT no RAW e escreve os mesmos dados formatados como parquet na camada Bronze.
-- **[Process_bronze_to_silver:](src/process_bronze_to_silver.py)** Este container lê o tópico Bronze e, assim que aparece uma nova notificação, consulta os dados da Bronze e realiza uma transformação em relação aos nomes das colunas. Em seguida, escreve na camada Silver e envia uma mensagem informando o tópico Silver.
-- **[Process_silver_to_gold:](src/process_silver_to_gold.py)** Este container lê o tópico Silver e, assim com novas mensagens, transforma a Silver e formata as tabelas na estrutura solicitada pela área de negócios ou análise de dados. Em seguida, escreve o formato na camada Gold, local no qual os dados serão consumidos.
+Com o Airflow configurado e funcionando corretamente, será criada uma DAG contendo duas tarefas: a primeira executará a Cloud Function e a segunda executará o job no Dataproc. 
 
-## Observação
-Todo o processamento dos dados é feito através de consultas SQL dentro do próprio Minio, que são salvos fora dos scripts dos containers, e sim na pasta [models](src/models/), simplificando assim o processo de manutenção e até de novas tabelas que serão incluídas. (*Inspiração a partir do DBT, que não é capaz de transformar dados dentro de um datalake, justificando o seu não uso para as etapas de processamento).
+### 6. Configuração do GitHub Actions para Criação de Esteiras de CI/CD
 
-Como o arquivo parquet localizado dentro do Minio não funciona de forma semelhante a um banco de dados, não sendo possível incluir na tabela inteira somente uma única linha de forma incremental, a cada inclusão de uma nova linha, é necessário selecionar o conteúdo atual da tabela para a memória, inserir mais uma linha e escrever novamente toda a tabela no lake. Para evitar todos os problemas que isso pode gerar, a tabela é particionada por data, sendo assim, a lógica de sobreescrita é feita dentro de uma data, e não em todo o histórico da tabela, melhorando a eficiência do processo.
+Para evitar a necessidade de copiar toda a DAG para a instância, será configurado o GitHub Actions, de modo que, a cada commit em um repositório do GitHub, ocorra um SSH na máquina virtual, copiando os códigos atualizados para dentro da instância, mantendo assim os dados da DAG atualizados. 
 
-Por fim, com todo o código já feito e as eventuais configurações já predefinidas no  [Docker Compose](docker-compose.yaml) e demais arquivos de configuração, basta agora subir todos os containers, e a partir de novas eventos de (INSERT, UPDATE, DELETE) nas tabelas predefinidas no banco, esta será replicada em tempo real para o lake, com as eventuais transformações necessárias, pronto para consumo.
-
-**O projeto concentra-se no desenvolvimento da lógica e engenharia, e não necessariamente na segurança. Para simplificar o código, não serão criadas variáveis de ambiente para as credenciais, que, em vez disso, serão diretamente incorporadas no código. 
 
 ## Pré-Requisitos
 
-Antes de prosseguir com este projeto, é necessário ter o Docker Desktop instalado em sua máquina local. 
+Antes de prosseguir com este projeto, é necessário ter o Terraform instalado na maquina, alem de um conta no GCP com chave json no arquivo raiz chamado de gcp_account.json.
 
 ## Executando o Projeto
 
