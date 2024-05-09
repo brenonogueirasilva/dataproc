@@ -1,0 +1,25 @@
+name: Clone Repo and Copy to GCE
+
+on:
+  push:
+    branches:
+      - main  # Substitua 'main' pelo nome da sua branch principal, se for diferente
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    -  uses: actions/checkout@v2
+      
+    - name: Copy Repository to GCE
+      env:
+        source: './dags/'
+        destination: 'conta-geral@35.188.122.6:/home/conta-geral/airflow/dags/'  
+      run: |
+          echo "${{secrets.DEPLOY_KEY}}" > deploy_key
+          chmod 600 ./deploy_key
+          sudo rsync -chav --delete \
+            -e 'ssh -i ./deploy_key -o StrictHostKeyChecking=no' \
+            --exclude /sass \
+            ${{env.source}} ${{env.destination}}
