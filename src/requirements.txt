@@ -1,0 +1,11 @@
+pandas==1.5.3
+requests
+google-api-python-client 
+google-auth-httplib2 
+google-auth-oauthlib
+google-cloud-storage
+google-cloud-bigquery
+google-cloud-logging
+google-cloud-secret-manager
+pyarrow
+fastparquet
